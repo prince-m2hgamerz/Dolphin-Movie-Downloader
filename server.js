@@ -170,6 +170,24 @@ function normalizeSize(value) {
   return "Unknown";
 }
 
+function isVideoLikeTitle(title) {
+  if (typeof title !== "string" || !title.trim()) return false;
+  return /2160p|1080p|720p|480p|bluray|brrip|webrip|web-dl|webdl|hdrip|dvdrip|h\.?264|x264|x265|hevc|av1|mkv|mp4|avi/i.test(
+    title
+  );
+}
+
+function normalizeSearchItem(torrent, index, stamp) {
+  const title = (torrent && torrent.title) || "Untitled";
+  return {
+    ...torrent,
+    id: (torrent && torrent.id) || `${(torrent && torrent.provider) || "provider"}-${stamp}-${index}`,
+    title,
+    seeds: normalizeSeedCount(torrent && torrent.seeds),
+    size: normalizeSize(torrent && torrent.size),
+  };
+}
+
 function isPathInside(parentPath, candidatePath) {
   const parent = path.resolve(parentPath);
   const candidate = path.resolve(candidatePath);
@@ -832,28 +850,54 @@ async function handleApi(req, res, requestUrl) {
 
     try {
       ensureProviders();
-      // Match old Electron behavior exactly.
       const raw = await TorrentSearchApi.search(query, "All", 1000);
-      const filtered = raw
-        .filter((torrent) => {
-          const title = (torrent && torrent.title) || "";
-          const seeds = normalizeSeedCount(torrent && torrent.seeds);
-          const isVideo =
-            /1080p|720p|480p|BluRay|WEBRip|H\.264|x265|AVI|MKV|MP4/i.test(
-              title
-            );
-          return seeds > 0 && isVideo;
-        })
-        .map((torrent, index) => ({
-          ...torrent,
-          id:
-            torrent.id || `${torrent.provider || "provider"}-${Date.now()}-${index}`,
-          title: torrent.title || "Untitled",
-          seeds: normalizeSeedCount(torrent.seeds),
-          size: normalizeSize(torrent.size),
-        }));
+      const list = Array.isArray(raw) ? raw : [];
+      const stamp = Date.now();
 
-      writeJson(res, 200, filtered);
+      const normalized = list.map((torrent, index) =>
+        normalizeSearchItem(torrent, index, stamp)
+      );
+
+      // Stage 1: strict match (video-like + seeded)
+      const strict = normalized.filter(
+        (torrent) => torrent.seeds > 0 && isVideoLikeTitle(torrent.title)
+      );
+      if (strict.length > 0) {
+        writeJson(
+          res,
+          200,
+          strict.sort((a, b) => b.seeds - a.seeds)
+        );
+        return;
+      }
+
+      // Stage 2: relaxed match (video-like regardless of seed metadata)
+      const relaxed = normalized.filter((torrent) => isVideoLikeTitle(torrent.title));
+      if (relaxed.length > 0) {
+        writeJson(
+          res,
+          200,
+          relaxed.sort((a, b) => b.seeds - a.seeds)
+        );
+        return;
+      }
+
+      // Stage 3: fallback by query tokens (handles provider metadata gaps on VPS IPs)
+      const queryTokens = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+      const fallback = normalized.filter((torrent) => {
+        const title = String(torrent.title || "").toLowerCase();
+        if (!title) return false;
+        return queryTokens.every((token) => title.includes(token));
+      });
+
+      writeJson(
+        res,
+        200,
+        fallback.sort((a, b) => b.seeds - a.seeds)
+      );
     } catch (error) {
       console.error("search-movies failed:", error);
       writeJson(res, 500, []);
