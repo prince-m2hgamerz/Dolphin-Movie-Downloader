@@ -15,7 +15,7 @@ const DEFAULT_DOWNLOAD_PATH = path.join(ROOT_DIR, "downloads");
 const SERVER_DOWNLOAD_PATH = path.resolve(
   process.env.SERVER_DOWNLOAD_PATH || DEFAULT_DOWNLOAD_PATH
 );
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 80);
 const HOST = process.env.HOST || "0.0.0.0";
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").trim();
 const COMPLETED_TTL_MS = Number(process.env.COMPLETED_TTL_MS || 0);
