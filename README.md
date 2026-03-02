@@ -70,7 +70,7 @@ Users are responsible for complying with local laws and content rights.
 1. Install Node.js 18+ on EC2.
 2. Clone the repository.
 3. Install dependencies: `npm install --omit=dev`
-4. Run server: `PORT=3000 npm run ec2:start`
+4. Run server: `PORT=3000 PUBLIC_BASE_URL=http://3.25.133.248 npm run ec2:start`
 5. Put Nginx or Caddy in front of Node for TLS/reverse proxy.
 
 ## Vercel Support (Frontend + EC2 API Proxy)

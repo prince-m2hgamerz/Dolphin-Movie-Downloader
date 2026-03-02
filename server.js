@@ -16,6 +16,8 @@ const SERVER_DOWNLOAD_PATH = path.resolve(
   process.env.SERVER_DOWNLOAD_PATH || DEFAULT_DOWNLOAD_PATH
 );
 const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || "0.0.0.0";
+const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").trim();
 const COMPLETED_TTL_MS = Number(process.env.COMPLETED_TTL_MS || 0);
 const STALL_RESTART_MS = Number(process.env.STALL_RESTART_MS || 180000);
 const MAX_STALL_RESTARTS = Number(process.env.MAX_STALL_RESTARTS || 3);
@@ -1117,8 +1119,11 @@ if (require.main === module) {
   boot()
     .then(() => {
       const server = createServer();
-      server.listen(PORT, "0.0.0.0", () => {
-        console.log(`Dolphin API server running on http://0.0.0.0:${PORT}`);
+      server.listen(PORT, HOST, () => {
+        const visibleBase = PUBLIC_BASE_URL.replace(/\/+$/, "");
+        const runtimeBase =
+          visibleBase || `http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`;
+        console.log(`Dolphin API server running on ${runtimeBase}`);
       });
 
       const cleanupTimer = setInterval(() => {
