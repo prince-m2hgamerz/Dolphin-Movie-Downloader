@@ -122,4 +122,7 @@ Accepted variable names:
 - `SEARCH_TIMEOUT_MS` (default `12000`): timeout per provider/category search call.
 - `SEARCH_RESULT_LIMIT` (default `1000`): max candidate results per search stage.
 - `SEARCH_PROVIDER_ORDER`: comma-separated provider priority list for fallback search.
+- `SEARCH_DIRECT_FALLBACK` (default `1`): enables direct mirror APIs (YTS + TPB) if scraper providers are blocked on EC2.
+- `YTS_DIRECT_MIRRORS`: comma-separated YTS API mirror list.
+- `TPB_API_MIRRORS`: comma-separated PirateBay API mirror list.
 - `SEARCH_DEBUG` (`0` or `1`): print provider-level search diagnostics in server logs.

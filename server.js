@@ -26,6 +26,7 @@ const MAX_STALL_RESTARTS = Number(process.env.MAX_STALL_RESTARTS || 3);
 const SEARCH_TIMEOUT_MS = Number(process.env.SEARCH_TIMEOUT_MS || 12000);
 const SEARCH_RESULT_LIMIT = Number(process.env.SEARCH_RESULT_LIMIT || 1000);
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
+const SEARCH_DIRECT_FALLBACK = process.env.SEARCH_DIRECT_FALLBACK !== "0";
 const SEARCH_PROVIDER_ORDER = String(
   process.env.SEARCH_PROVIDER_ORDER ||
     "Yts,ThePirateBay,TorrentProject,1337x,Eztv,Limetorrents,KickassTorrents,Torrentz2,Torrent9,Rarbg"
@@ -33,6 +34,24 @@ const SEARCH_PROVIDER_ORDER = String(
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
+const YTS_DIRECT_MIRRORS = String(
+  process.env.YTS_DIRECT_MIRRORS ||
+    "https://yts.mx,https://yts.rs,https://yts.lt,https://yts.do"
+)
+  .split(",")
+  .map((item) => item.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+const TPB_API_MIRRORS = String(
+  process.env.TPB_API_MIRRORS ||
+    "https://apibay.org,https://pirateproxy.live,https://apibay.net"
+)
+  .split(",")
+  .map((item) => item.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+const DIRECT_PROVIDER_TIMEOUT_MS = Math.max(
+  4000,
+  Math.min(SEARCH_TIMEOUT_MS, 15000)
+);
 const EXTRA_TRACKERS = [
   "udp://tracker.opentrackr.org:1337/announce",
   "udp://open.stealth.si:80/announce",
@@ -204,6 +223,75 @@ function providerKey(name) {
     .replace(/[^a-z0-9]/g, "");
 }
 
+function cleanQueryForUrl(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function summarizeErrorBody(value) {
+  const text = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+  if (/<\/?(html|body|head|script|title|meta)/i.test(text)) {
+    return "html challenge/blocked response";
+  }
+  return text.slice(0, 220);
+}
+
+function safeErrorMessage(error) {
+  if (!error) return "unknown";
+  if (typeof error === "string") return summarizeErrorBody(error) || "unknown";
+  const raw = error.message || error.code || "unknown";
+  return summarizeErrorBody(raw) || "unknown";
+}
+
+async function fetchJsonWithTimeout(url, label) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DIRECT_PROVIDER_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json,text/plain,*/*",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+      },
+      signal: controller.signal,
+    });
+
+    const body = await response.text();
+    if (!response.ok) {
+      throw new Error(`${response.status} - ${summarizeErrorBody(body)}`);
+    }
+
+    try {
+      return JSON.parse(body);
+    } catch (error) {
+      throw new Error(`invalid json for ${label || "request"}`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildMagnetFromHash(hash, title) {
+  const normalizedHash = String(hash || "")
+    .trim()
+    .toUpperCase();
+  if (!/^[A-F0-9]{40}$/.test(normalizedHash)) return "";
+
+  const parts = [`xt=urn:btih:${normalizedHash}`];
+  const cleanTitle = String(title || "").trim();
+  if (cleanTitle) {
+    parts.push(`dn=${encodeURIComponent(cleanTitle)}`);
+  }
+  EXTRA_TRACKERS.forEach((tracker) => {
+    parts.push(`tr=${encodeURIComponent(tracker)}`);
+  });
+  return normalizeMagnet(`magnet:?${parts.join("&")}`);
+}
+
 function withTimeout(promise, timeoutMs, label) {
   const ms = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 12000;
   return Promise.race([
@@ -287,7 +375,7 @@ async function searchActiveProviders(query, category, limit, diagnostics) {
       count: 0,
       ms: Date.now() - started,
       ok: false,
-      error: error && error.message ? error.message : "unknown",
+      error: safeErrorMessage(error),
     });
     return [];
   }
@@ -334,7 +422,7 @@ async function searchProviderByProvider(query, categories, limit, diagnostics) {
               count: 0,
               ms: Date.now() - started,
               ok: false,
-              error: error && error.message ? error.message : "unknown",
+              error: safeErrorMessage(error),
             });
             return [];
           }
@@ -345,6 +433,166 @@ async function searchProviderByProvider(query, categories, limit, diagnostics) {
 
   const settled = await Promise.all(tasks);
   return settled.flat();
+}
+
+function normalizeYtsDirectMovies(baseUrl, payload, query, limit) {
+  const data = payload && payload.data;
+  const movies = Array.isArray(data && data.movies) ? data.movies : [];
+  const hardLimit = Math.max(20, Math.min(Number(limit) || 100, 150));
+  const results = [];
+
+  for (const movie of movies) {
+    const torrents = Array.isArray(movie && movie.torrents) ? movie.torrents : [];
+    const movieName = String(movie && (movie.title_long || movie.title) ? movie.title_long || movie.title : query).trim();
+    const movieUrl =
+      (movie && (movie.url || movie.torrent_url)) || `${baseUrl}/movie/${encodeURIComponent(movieName)}`;
+
+    for (const torrent of torrents) {
+      const hash = torrent && torrent.hash;
+      const quality = String((torrent && torrent.quality) || "").trim();
+      const type = String((torrent && torrent.type) || "").trim();
+      const titleParts = [movieName, quality, type].filter(Boolean);
+      const title = titleParts.join(" ").trim() || movieName;
+      const magnet = buildMagnetFromHash(hash, title);
+      if (!magnet) continue;
+
+      results.push({
+        provider: "YTS-Direct",
+        title,
+        seeds: normalizeSeedCount(torrent && (torrent.seeds || torrent.seeders)),
+        peers: normalizeSeedCount(torrent && (torrent.peers || torrent.leechers)),
+        size: normalizeSize((torrent && torrent.size) || ""),
+        magnet,
+        link: movieUrl,
+      });
+
+      if (results.length >= hardLimit) return results;
+    }
+  }
+
+  return results;
+}
+
+function normalizeTpbDirectRows(baseUrl, payload, limit) {
+  const list = Array.isArray(payload) ? payload : [];
+  const hardLimit = Math.max(20, Math.min(Number(limit) || 120, 200));
+  const results = [];
+
+  for (const row of list) {
+    const title = String((row && row.name) || "").trim();
+    const hash = String((row && row.info_hash) || "").trim();
+
+    if (!title || !hash) continue;
+    if (/^no results returned$/i.test(title)) continue;
+
+    const magnet = buildMagnetFromHash(hash, title);
+    if (!magnet) continue;
+
+    const id = String((row && row.id) || "").trim();
+    results.push({
+      provider: "TPB-Direct",
+      title,
+      seeds: normalizeSeedCount(row && (row.seeders || row.seeds)),
+      peers: normalizeSeedCount(row && (row.leechers || row.peers)),
+      size: normalizeSize(
+        row && row.size && Number.isFinite(Number(row.size)) && Number(row.size) > 0
+          ? Number(row.size)
+          : row && row.size
+      ),
+      magnet,
+      link: id ? `${baseUrl}/description.php?id=${encodeURIComponent(id)}` : `${baseUrl}/`,
+    });
+
+    if (results.length >= hardLimit) return results;
+  }
+
+  return results;
+}
+
+async function searchYtsDirect(query, limit, diagnostics) {
+  const queryTerm = cleanQueryForUrl(query);
+  if (!queryTerm) return [];
+
+  const cappedLimit = Math.max(20, Math.min(Number(limit) || 100, 100));
+
+  for (const baseUrl of YTS_DIRECT_MIRRORS) {
+    const started = Date.now();
+    try {
+      const url = `${baseUrl}/api/v2/list_movies.json?limit=${cappedLimit}&sort_by=seeds&order_by=desc&query_term=${encodeURIComponent(queryTerm)}`;
+      const payload = await fetchJsonWithTimeout(url, `yts-direct:${baseUrl}`);
+      const results = normalizeYtsDirectMovies(baseUrl, payload, queryTerm, cappedLimit);
+
+      diagnostics.push({
+        stage: "direct-provider",
+        provider: "YTS-Direct",
+        mirror: baseUrl,
+        count: results.length,
+        ms: Date.now() - started,
+        ok: true,
+      });
+
+      if (results.length > 0) return results;
+    } catch (error) {
+      diagnostics.push({
+        stage: "direct-provider",
+        provider: "YTS-Direct",
+        mirror: baseUrl,
+        count: 0,
+        ms: Date.now() - started,
+        ok: false,
+        error: safeErrorMessage(error),
+      });
+    }
+  }
+
+  return [];
+}
+
+async function searchTpbDirect(query, limit, diagnostics) {
+  const queryTerm = cleanQueryForUrl(query);
+  if (!queryTerm) return [];
+
+  const cappedLimit = Math.max(20, Math.min(Number(limit) || 150, 200));
+
+  for (const baseUrl of TPB_API_MIRRORS) {
+    const started = Date.now();
+    try {
+      const url = `${baseUrl}/q.php?q=${encodeURIComponent(queryTerm)}&cat=200`;
+      const payload = await fetchJsonWithTimeout(url, `tpb-direct:${baseUrl}`);
+      const results = normalizeTpbDirectRows(baseUrl, payload, cappedLimit);
+
+      diagnostics.push({
+        stage: "direct-provider",
+        provider: "TPB-Direct",
+        mirror: baseUrl,
+        count: results.length,
+        ms: Date.now() - started,
+        ok: true,
+      });
+
+      if (results.length > 0) return results;
+    } catch (error) {
+      diagnostics.push({
+        stage: "direct-provider",
+        provider: "TPB-Direct",
+        mirror: baseUrl,
+        count: 0,
+        ms: Date.now() - started,
+        ok: false,
+        error: safeErrorMessage(error),
+      });
+    }
+  }
+
+  return [];
+}
+
+async function searchDirectProviders(query, limit, diagnostics) {
+  const [yts, tpb] = await Promise.all([
+    searchYtsDirect(query, limit, diagnostics),
+    searchTpbDirect(query, limit, diagnostics),
+  ]);
+  return dedupeTorrents([...(Array.isArray(yts) ? yts : []), ...(Array.isArray(tpb) ? tpb : [])]);
 }
 
 async function runSearchPipeline(query) {
@@ -379,10 +627,21 @@ async function runSearchPipeline(query) {
     deduped = dedupeTorrents(deduped.concat(fallback));
   }
 
+  // Direct mirror APIs improve EC2 reliability when scrapers are blocked by Cloudflare.
+  if (SEARCH_DIRECT_FALLBACK && deduped.length < 12) {
+    const directFallback = await searchDirectProviders(
+      query,
+      SEARCH_RESULT_LIMIT,
+      diagnostics
+    );
+    deduped = dedupeTorrents(deduped.concat(directFallback));
+  }
+
   if (SEARCH_DEBUG) {
     const summary = diagnostics.map((item) => ({
       stage: item.stage,
       provider: item.provider,
+      mirror: item.mirror,
       category: item.category,
       count: item.count,
       ok: item.ok,
