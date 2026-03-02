@@ -1,6 +1,8 @@
 const assert = require("assert");
+const { loadEnvFile } = require("../lib/env");
 
 process.env.SKIP_RESTORE = "1";
+loadEnvFile();
 
 const { createServer, boot, shutdown } = require("../server");
 
@@ -19,12 +21,20 @@ async function run() {
   await boot();
   const server = createServer();
 
+  const bindHost = process.env.TEST_BIND_HOST || process.env.HOST || "127.0.0.1";
+  const requestedPort = Number(process.env.TEST_PORT || 0);
+  const listenPort =
+    Number.isFinite(requestedPort) && requestedPort >= 0 ? requestedPort : 0;
+
   await new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(listenPort, bindHost, resolve);
   });
 
   const { port } = server.address();
-  const baseUrl = `http://127.0.0.1:${port}`;
+  const clientHost =
+    process.env.TEST_CLIENT_HOST ||
+    (bindHost === "0.0.0.0" ? "127.0.0.1" : bindHost);
+  const baseUrl = `http://${clientHost}:${port}`;
   const results = [];
 
   try {

@@ -31,6 +31,7 @@ Users are responsible for complying with local laws and content rights.
 ### Environment file
 1. Copy `.env.example` to `.env`
 2. Update values for your environment
+3. `server.js` and test/proxy scripts automatically read `.env`
 
 ### Entry point
 - `server.js`
@@ -70,7 +71,7 @@ Users are responsible for complying with local laws and content rights.
 1. Install Node.js 18+ on EC2.
 2. Clone the repository.
 3. Install dependencies: `npm install --omit=dev`
-4. Run server: `PORT=80 PUBLIC_BASE_URL=http://3.25.133.248 npm run ec2:start`
+4. Set `.env` (`PORT`, `HOST`, `PUBLIC_BASE_URL`) and run: `npm run ec2:start`
 5. Put Nginx or Caddy in front of Node for TLS/reverse proxy.
 
 ## Vercel Support (Frontend + EC2 API Proxy)

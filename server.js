@@ -6,6 +6,8 @@ const { pipeline } = require("stream");
 const { URL } = require("url");
 const WebTorrent = require("webtorrent");
 const TorrentSearchApi = require("torrent-search-api");
+const { getRuntimeConfig } = require("./lib/env");
+const runtimeConfig = getRuntimeConfig();
 
 const ROOT_DIR = __dirname;
 const DATA_DIR = path.join(ROOT_DIR, "data");
@@ -15,9 +17,9 @@ const DEFAULT_DOWNLOAD_PATH = path.join(ROOT_DIR, "downloads");
 const SERVER_DOWNLOAD_PATH = path.resolve(
   process.env.SERVER_DOWNLOAD_PATH || DEFAULT_DOWNLOAD_PATH
 );
-const PORT = Number(process.env.PORT || 80);
-const HOST = process.env.HOST || "0.0.0.0";
-const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").trim();
+const PORT = runtimeConfig.PORT;
+const HOST = runtimeConfig.HOST;
+const PUBLIC_BASE_URL = runtimeConfig.PUBLIC_BASE_URL;
 const COMPLETED_TTL_MS = Number(process.env.COMPLETED_TTL_MS || 0);
 const STALL_RESTART_MS = Number(process.env.STALL_RESTART_MS || 180000);
 const MAX_STALL_RESTARTS = Number(process.env.MAX_STALL_RESTARTS || 3);

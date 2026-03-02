@@ -1,4 +1,7 @@
 const { Readable } = require("stream");
+const { loadEnvFile } = require("../lib/env");
+
+loadEnvFile();
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",

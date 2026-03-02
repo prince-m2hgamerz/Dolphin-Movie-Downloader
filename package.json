@@ -11,8 +11,8 @@
     "server:start": "node server.js",
     "ec2:start": "node server.js",
     "web:test": "node scripts/test-api.js",
-    "web:check": "node --check server.js && node --check src/web-api.js && node --check src/renderer.js",
-    "vercel:check": "node --check api/[...path].js && node -e \"JSON.parse(require('fs').readFileSync('vercel.json','utf8')); console.log('vercel config ok')\""
+    "web:check": "node --check lib/env.js && node --check server.js && node --check src/web-api.js && node --check src/renderer.js",
+    "vercel:check": "node --check lib/env.js && node --check api/[...path].js && node -e \"JSON.parse(require('fs').readFileSync('vercel.json','utf8')); console.log('vercel config ok')\""
   },
   "build": {
     "appId": "com.moviedownloader.app",
