@@ -23,6 +23,16 @@ const PUBLIC_BASE_URL = runtimeConfig.PUBLIC_BASE_URL;
 const COMPLETED_TTL_MS = Number(process.env.COMPLETED_TTL_MS || 0);
 const STALL_RESTART_MS = Number(process.env.STALL_RESTART_MS || 180000);
 const MAX_STALL_RESTARTS = Number(process.env.MAX_STALL_RESTARTS || 3);
+const SEARCH_TIMEOUT_MS = Number(process.env.SEARCH_TIMEOUT_MS || 12000);
+const SEARCH_RESULT_LIMIT = Number(process.env.SEARCH_RESULT_LIMIT || 1000);
+const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
+const SEARCH_PROVIDER_ORDER = String(
+  process.env.SEARCH_PROVIDER_ORDER ||
+    "Yts,ThePirateBay,TorrentProject,1337x,Eztv,Limetorrents,KickassTorrents,Torrentz2,Torrent9,Rarbg"
+)
+  .split(",")
+  .map((item) => item.trim())
+  .filter(Boolean);
 const EXTRA_TRACKERS = [
   "udp://tracker.opentrackr.org:1337/announce",
   "udp://open.stealth.si:80/announce",
@@ -186,6 +196,203 @@ function normalizeSearchItem(torrent, index, stamp) {
     seeds: normalizeSeedCount(torrent && torrent.seeds),
     size: normalizeSize(torrent && torrent.size),
   };
+}
+
+function providerKey(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  const ms = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 12000;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label || "operation"} timed out`)), ms);
+    }),
+  ]);
+}
+
+function getOrderedActiveProviders() {
+  const active = TorrentSearchApi.getActiveProviders()
+    .map((provider) => provider && provider.name)
+    .filter(Boolean);
+
+  if (active.length === 0) return [];
+
+  const activeByKey = new Map(active.map((name) => [providerKey(name), name]));
+  const preferred = SEARCH_PROVIDER_ORDER.map((name) =>
+    activeByKey.get(providerKey(name))
+  ).filter(Boolean);
+  const seen = new Set(preferred.map((name) => providerKey(name)));
+  const remainder = active.filter((name) => !seen.has(providerKey(name)));
+
+  return [...preferred, ...remainder];
+}
+
+function torrentDedupeKey(item) {
+  if (!item) return "";
+  const magnet = normalizeMagnet(item.magnet);
+  if (magnet) return `magnet:${magnet}`;
+  if (item.link) return `link:${String(item.link).trim()}`;
+
+  const title = String(item.title || "")
+    .trim()
+    .toLowerCase();
+  const provider = String(item.provider || "")
+    .trim()
+    .toLowerCase();
+  const size = String(item.size || "")
+    .trim()
+    .toLowerCase();
+
+  return `title:${title}|provider:${provider}|size:${size}`;
+}
+
+function dedupeTorrents(list) {
+  const map = new Map();
+  (Array.isArray(list) ? list : []).forEach((item) => {
+    const key = torrentDedupeKey(item);
+    if (!key) return;
+    const existing = map.get(key);
+    if (!existing || normalizeSeedCount(item.seeds) > normalizeSeedCount(existing.seeds)) {
+      map.set(key, item);
+    }
+  });
+  return Array.from(map.values());
+}
+
+async function searchActiveProviders(query, category, limit, diagnostics) {
+  const started = Date.now();
+  try {
+    const results = await withTimeout(
+      TorrentSearchApi.search(query, category, limit),
+      SEARCH_TIMEOUT_MS,
+      `search(all:${category})`
+    );
+    const safe = Array.isArray(results) ? results : [];
+    diagnostics.push({
+      stage: "all-providers",
+      category,
+      count: safe.length,
+      ms: Date.now() - started,
+      ok: true,
+    });
+    return safe;
+  } catch (error) {
+    diagnostics.push({
+      stage: "all-providers",
+      category,
+      count: 0,
+      ms: Date.now() - started,
+      ok: false,
+      error: error && error.message ? error.message : "unknown",
+    });
+    return [];
+  }
+}
+
+async function searchProviderByProvider(query, categories, limit, diagnostics) {
+  const providers = getOrderedActiveProviders();
+  if (providers.length === 0) return [];
+
+  const categoryList = Array.isArray(categories) && categories.length > 0 ? categories : ["All"];
+  const targetProviders = providers.slice(0, 8);
+  const perProviderLimit = Math.max(
+    30,
+    Math.ceil((Number(limit) || SEARCH_RESULT_LIMIT) / Math.max(1, targetProviders.length))
+  );
+
+  const tasks = [];
+  categoryList.forEach((category) => {
+    targetProviders.forEach((provider) => {
+      tasks.push(
+        (async () => {
+          const started = Date.now();
+          try {
+            const raw = await withTimeout(
+              TorrentSearchApi.search([provider], query, category, perProviderLimit),
+              SEARCH_TIMEOUT_MS,
+              `search(${provider}:${category})`
+            );
+            const safe = Array.isArray(raw) ? raw : [];
+            diagnostics.push({
+              stage: "provider-fallback",
+              provider,
+              category,
+              count: safe.length,
+              ms: Date.now() - started,
+              ok: true,
+            });
+            return safe;
+          } catch (error) {
+            diagnostics.push({
+              stage: "provider-fallback",
+              provider,
+              category,
+              count: 0,
+              ms: Date.now() - started,
+              ok: false,
+              error: error && error.message ? error.message : "unknown",
+            });
+            return [];
+          }
+        })()
+      );
+    });
+  });
+
+  const settled = await Promise.all(tasks);
+  return settled.flat();
+}
+
+async function runSearchPipeline(query) {
+  ensureProviders();
+
+  const diagnostics = [];
+  const categories = ["All", "Movies", "TV"];
+  let pool = [];
+
+  for (const category of categories) {
+    const results = await searchActiveProviders(
+      query,
+      category,
+      SEARCH_RESULT_LIMIT,
+      diagnostics
+    );
+    if (results.length > 0) {
+      pool = pool.concat(results);
+    }
+  }
+
+  let deduped = dedupeTorrents(pool);
+
+  // EC2 IPs often get partial provider failures; fallback to per-provider search.
+  if (deduped.length < 12) {
+    const fallback = await searchProviderByProvider(
+      query,
+      categories,
+      SEARCH_RESULT_LIMIT,
+      diagnostics
+    );
+    deduped = dedupeTorrents(deduped.concat(fallback));
+  }
+
+  if (SEARCH_DEBUG) {
+    const summary = diagnostics.map((item) => ({
+      stage: item.stage,
+      provider: item.provider,
+      category: item.category,
+      count: item.count,
+      ok: item.ok,
+      ms: item.ms,
+      error: item.error,
+    }));
+    console.log("[search-debug]", JSON.stringify({ query, summary }));
+  }
+
+  return { raw: deduped, diagnostics };
 }
 
 function isPathInside(parentPath, candidatePath) {
@@ -849,8 +1056,7 @@ async function handleApi(req, res, requestUrl) {
     }
 
     try {
-      ensureProviders();
-      const raw = await TorrentSearchApi.search(query, "All", 1000);
+      const { raw } = await runSearchPipeline(query);
       const list = Array.isArray(raw) ? raw : [];
       const stamp = Date.now();
 
@@ -901,6 +1107,44 @@ async function handleApi(req, res, requestUrl) {
     } catch (error) {
       console.error("search-movies failed:", error);
       writeJson(res, 500, []);
+    }
+    return;
+  }
+
+  if (pathname === "/api/search-debug") {
+    if (req.method !== "GET") {
+      writeJson(res, 405, { error: "Method not allowed" });
+      return;
+    }
+
+    const query = (requestUrl.searchParams.get("q") || "").trim();
+    if (!query) {
+      writeJson(res, 400, { error: "Missing query parameter: q" });
+      return;
+    }
+
+    try {
+      const { raw, diagnostics } = await runSearchPipeline(query);
+      const top = (Array.isArray(raw) ? raw : [])
+        .slice(0, 20)
+        .map((torrent) => ({
+          provider: torrent.provider || "",
+          title: torrent.title || "",
+          seeds: normalizeSeedCount(torrent.seeds),
+          size: normalizeSize(torrent.size),
+        }));
+
+      writeJson(res, 200, {
+        query,
+        totalRaw: Array.isArray(raw) ? raw.length : 0,
+        diagnostics,
+        sample: top,
+      });
+    } catch (error) {
+      writeJson(res, 500, {
+        error: "Search debug failed",
+        detail: error && error.message ? error.message : "unknown",
+      });
     }
     return;
   }

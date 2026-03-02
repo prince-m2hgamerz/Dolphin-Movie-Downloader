@@ -40,6 +40,7 @@ Users are responsible for complying with local laws and content rights.
 ### API endpoints
 - `GET /api/health`
 - `GET /api/search-movies?q=...`
+- `GET /api/search-debug?q=...` (diagnostics for provider availability)
 - `POST /api/get-magnet`
 - `GET /api/get-config`
 - `POST /api/select-folder` (locked, returns `403`)
@@ -118,3 +119,7 @@ Accepted variable names:
 - `STALL_RESTART_MS` (default `180000`): if a download has zero peers/zero speed for this long, server retries the torrent session.
 - `MAX_STALL_RESTARTS` (default `3`): max auto-reconnect attempts per download.
 - `COMPLETED_TTL_MS` (default `0`): auto-delete completed files after timeout.
+- `SEARCH_TIMEOUT_MS` (default `12000`): timeout per provider/category search call.
+- `SEARCH_RESULT_LIMIT` (default `1000`): max candidate results per search stage.
+- `SEARCH_PROVIDER_ORDER`: comma-separated provider priority list for fallback search.
+- `SEARCH_DEBUG` (`0` or `1`): print provider-level search diagnostics in server logs.
