@@ -754,13 +754,34 @@ async function removeDownloadedArtifacts(state) {
   }
 
   const sortedTargets = Array.from(targets).sort((a, b) => b.length - a.length);
+  const touchedParents = new Set();
 
   for (const targetPath of sortedTargets) {
     if (!isPathInside(state.path, targetPath)) continue;
+    touchedParents.add(path.dirname(targetPath));
     try {
       await fsp.rm(targetPath, { recursive: true, force: true });
     } catch (error) {
       console.error("Artifact cleanup failed:", targetPath, error.message);
+    }
+  }
+
+  // Remove now-empty parent folders under downloads path so movie directories don't linger.
+  const parentList = Array.from(touchedParents).sort((a, b) => b.length - a.length);
+  for (const parentPath of parentList) {
+    let current = path.resolve(parentPath);
+    while (isPathInside(state.path, current) && current !== path.resolve(state.path)) {
+      try {
+        await fsp.rmdir(current);
+      } catch (error) {
+        if (error && (error.code === "ENOTEMPTY" || error.code === "EEXIST")) break;
+        if (error && error.code === "ENOENT") {
+          current = path.dirname(current);
+          continue;
+        }
+        break;
+      }
+      current = path.dirname(current);
     }
   }
 }
@@ -1276,6 +1297,7 @@ async function serveFile(res, filePath) {
 
 async function streamVideoFile(res, absolutePath, options = {}) {
   const inline = !!options.inline;
+  const cleanupOnClose = !!options.cleanupOnClose;
 
   try {
     await fsp.access(absolutePath, fs.constants.R_OK);
@@ -1306,6 +1328,17 @@ async function streamVideoFile(res, absolutePath, options = {}) {
 
   const readStream = fs.createReadStream(absolutePath);
   let bytesSent = 0;
+  let cleanupDone = false;
+
+  const runCleanupOnce = async () => {
+    if (cleanupDone || typeof options.onComplete !== "function") return;
+    cleanupDone = true;
+    try {
+      await options.onComplete();
+    } catch (cleanupError) {
+      console.error("Post-download cleanup failed:", cleanupError);
+    }
+  };
 
   readStream.on("data", (chunk) => {
     bytesSent += chunk.length;
@@ -1313,12 +1346,9 @@ async function streamVideoFile(res, absolutePath, options = {}) {
 
   await new Promise((resolve) => {
     pipeline(readStream, res, async (error) => {
-      if (!error && bytesSent === fileStat.size && typeof options.onComplete === "function") {
-        try {
-          await options.onComplete();
-        } catch (cleanupError) {
-          console.error("Post-download cleanup failed:", cleanupError);
-        }
+      const transferFinished = bytesSent >= fileStat.size;
+      if (transferFinished || cleanupOnClose) {
+        await runCleanupOnce();
       }
       resolve();
     });
@@ -1632,7 +1662,10 @@ async function handleApi(req, res, requestUrl) {
     const isPreview = pathname === "/api/preview-file";
     await streamVideoFile(res, state.fileAbsolutePath, {
       inline: isPreview,
-      onComplete: isPreview ? null : async () => finalizeDownloadDelivery(state.id),
+      // Also cleanup for preview requests to keep EC2 storage free.
+      onComplete: async () => finalizeDownloadDelivery(state.id),
+      // For preview, cleanup even when client closes early.
+      cleanupOnClose: isPreview,
     });
     return;
   }

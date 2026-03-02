@@ -401,7 +401,9 @@ window.api.onComplete((data) => {
     // Update the internal tracker with the final file path
     const torrent = activeDownloads.get(data.id);
     if (torrent) {
-        torrent.filePath = data.path;
+        torrent.filePath = data.previewPath || data.path || data.downloadPath || "";
+        torrent.previewPath = data.previewPath || "";
+        torrent.downloadPath = data.downloadPath || "";
     }
 
     const card = document.getElementById(`card-${data.id}`);
@@ -441,8 +443,15 @@ window.api.onComplete((data) => {
 
 function locateFile(id) {
   const torrent = activeDownloads.get(id);
-  if (torrent && torrent.filePath) {
-    window.api.showItemInFolder(torrent.filePath);
+  if (torrent) {
+    const targetPath = torrent.previewPath || torrent.filePath || torrent.downloadPath || "";
+    if (targetPath) {
+      window.api.showItemInFolder(targetPath);
+      return;
+    }
+  }
+  if (torrent && torrent.downloadPath) {
+    window.api.showItemInFolder(torrent.downloadPath);
   } else {
     alert("File path not found. It might have been moved.");
   }

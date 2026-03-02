@@ -276,7 +276,9 @@
           emit("complete", {
             id,
             title: state.title || "Download",
-            path: state.downloadUrl || "",
+            path: state.previewUrl || state.downloadUrl || "",
+            previewPath: state.previewUrl || "",
+            downloadPath: state.downloadUrl || "",
           });
         }
         knownStates.set(id, state);

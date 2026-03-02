@@ -56,6 +56,7 @@ Users are responsible for complying with local laws and content rights.
 ### File lifecycle on EC2
 - Files are temporarily stored on EC2 while downloading.
 - When a user downloads through `GET /api/download-file?id=...` and the transfer completes successfully, the server deletes downloaded artifacts for that job.
+- Preview requests through `GET /api/preview-file?id=...` also trigger cleanup for that job.
 - This keeps EC2 storage clean after delivery.
 - Download path is server-managed and hidden from API/UI clients.
 - Optional: set `COMPLETED_TTL_MS` to auto-delete completed files after a timeout even if no user downloads them.
