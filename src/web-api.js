@@ -291,6 +291,9 @@
         downloaded: Number(state.downloaded || 0),
         total: Number(state.total || 0),
         peers: Number(state.peers || 0),
+        stalled: !!state.stalled,
+        status: String(state.status || ""),
+        error: String(state.error || ""),
         magnet,
       });
 

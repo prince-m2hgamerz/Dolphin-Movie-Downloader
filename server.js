@@ -22,7 +22,7 @@ const HOST = runtimeConfig.HOST;
 const PUBLIC_BASE_URL = runtimeConfig.PUBLIC_BASE_URL;
 const COMPLETED_TTL_MS = Number(process.env.COMPLETED_TTL_MS || 0);
 const STALL_RESTART_MS = Number(process.env.STALL_RESTART_MS || 180000);
-const MAX_STALL_RESTARTS = Number(process.env.MAX_STALL_RESTARTS || 3);
+const MAX_STALL_RESTARTS = Number(process.env.MAX_STALL_RESTARTS || 8);
 const SEARCH_TIMEOUT_MS = Number(process.env.SEARCH_TIMEOUT_MS || 12000);
 const SEARCH_RESULT_LIMIT = Number(process.env.SEARCH_RESULT_LIMIT || 1000);
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
@@ -52,6 +52,9 @@ const DIRECT_PROVIDER_TIMEOUT_MS = Math.max(
   4000,
   Math.min(SEARCH_TIMEOUT_MS, 15000)
 );
+const STALL_MIN_PROGRESS_BYTES = Number(
+  process.env.STALL_MIN_PROGRESS_BYTES || 32768
+);
 const EXTRA_TRACKERS = [
   "udp://tracker.opentrackr.org:1337/announce",
   "udp://open.stealth.si:80/announce",
@@ -61,6 +64,16 @@ const EXTRA_TRACKERS = [
   "udp://tracker.openbittorrent.com:6969/announce",
   "udp://tracker.dler.org:6969/announce",
   "udp://opentor.org:2710/announce",
+  "udp://tracker.tiny-vps.com:6969/announce",
+  "udp://tracker.0x7c0.com:6969/announce",
+  "udp://tracker.theoks.net:6969/announce",
+  "udp://tracker.moeking.me:6969/announce",
+  "udp://bt1.archive.org:6969/announce",
+  "udp://bt2.archive.org:6969/announce",
+  "udp://open.demonii.com:1337/announce",
+  "http://tracker.opentrackr.org:1337/announce",
+  "http://open.acgnxtracker.com:80/announce",
+  "https://tracker.opentrackr.org:443/announce",
   "wss://tracker.openwebtorrent.com",
   "wss://tracker.webtorrent.dev",
   "wss://tracker.files.fm:7073/announce",
@@ -812,23 +825,40 @@ async function recoverStalledDownloads() {
     const speed = state.torrent.downloadSpeed || 0;
     const downloaded = state.torrent.downloaded || 0;
 
-    if (downloaded > (state.lastDownloaded || 0)) {
+    if (hasMeaningfulProgress(state, downloaded)) {
       state.lastDownloaded = downloaded;
       state.lastActivityAt = now;
+      state.restartCount = 0;
       return false;
     }
 
-    if (peers > 0 || speed > 0) {
+    // A connected peer with zero transfer can stay stuck forever; only real transfer keeps activity alive.
+    if (speed > 0) {
       state.lastActivityAt = now;
       return false;
     }
 
-    return now - (state.lastActivityAt || now) >= STALL_RESTART_MS;
+    const stalledForMs = now - (state.lastActivityAt || now);
+    if (stalledForMs < STALL_RESTART_MS) return false;
+
+    // No peers and no transfer for too long.
+    if (peers <= 0) return true;
+
+    // Peer connected but not sending pieces: treat as stalled.
+    return true;
   });
 
   for (const state of candidates) {
     try {
+      if (state.restartCount >= MAX_STALL_RESTARTS) {
+        state.status = "error";
+        state.error = "Stalled: connected but no transferable peers";
+        await saveActiveDownloads();
+        continue;
+      }
+
       state.status = "stalled";
+      state.error = "No transfer detected, reconnecting peers...";
       await restartStalledDownload(state);
     } catch (error) {
       state.status = "error";
@@ -846,8 +876,12 @@ function attachTorrentToState(state, torrent) {
   state.lastDownloaded = 0;
 
   torrent.on("download", () => {
+    const downloaded = torrent.downloaded || 0;
+    if (hasMeaningfulProgress(state, downloaded)) {
+      state.restartCount = 0;
+    }
     state.lastActivityAt = Date.now();
-    state.lastDownloaded = torrent.downloaded || state.lastDownloaded || 0;
+    state.lastDownloaded = downloaded || state.lastDownloaded || 0;
   });
 
   torrent.on("wire", () => {
@@ -978,6 +1012,12 @@ function buildAnnounceList(magnet) {
   });
 
   return announce;
+}
+
+function hasMeaningfulProgress(state, downloaded) {
+  const current = Number(downloaded || 0);
+  const previous = Number(state.lastDownloaded || 0);
+  return current > previous + Math.max(0, STALL_MIN_PROGRESS_BYTES);
 }
 
 function addTorrentForState(state) {

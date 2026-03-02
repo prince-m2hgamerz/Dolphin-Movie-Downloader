@@ -116,8 +116,9 @@ Accepted variable names:
 
 ### Reliability tuning (optional env vars)
 - `SERVER_DOWNLOAD_PATH` (default `./downloads`): locked server-side download directory.
-- `STALL_RESTART_MS` (default `180000`): if a download has zero peers/zero speed for this long, server retries the torrent session.
-- `MAX_STALL_RESTARTS` (default `3`): max auto-reconnect attempts per download.
+- `STALL_RESTART_MS` (default `180000`): if no meaningful transfer is detected for this long, server retries the torrent session.
+- `MAX_STALL_RESTARTS` (default `8`): max auto-reconnect attempts per download before marking it failed.
+- `STALL_MIN_PROGRESS_BYTES` (default `32768`): minimum bytes increase considered real progress (prevents false “active” state).
 - `COMPLETED_TTL_MS` (default `0`): auto-delete completed files after timeout.
 - `SEARCH_TIMEOUT_MS` (default `12000`): timeout per provider/category search call.
 - `SEARCH_RESULT_LIMIT` (default `1000`): max candidate results per search stage.

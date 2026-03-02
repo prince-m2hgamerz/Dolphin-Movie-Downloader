@@ -375,7 +375,18 @@ window.api.onProgress((data) => {
 
     if (bar) bar.style.width = `${Math.max(0, Math.min(100, progressValue))}%`;
     if (percentText) percentText.innerText = formatProgressPercent(progressValue);
-    if (speedText) speedText.innerText = formatSpeed(speedBytes);
+    if (speedText) {
+      speedText.classList.remove("status-error");
+      speedText.classList.remove("status-complete");
+
+      if (data.status === "reconnecting" || data.stalled) {
+        speedText.innerText = "Reconnecting peers...";
+      } else if (Number(data.peers || 0) > 0 && speedBytes <= 0) {
+        speedText.innerText = "Connected, waiting for data...";
+      } else {
+        speedText.innerText = formatSpeed(speedBytes);
+      }
+    }
 
     if (sizeText && data.total) {
       const downStr = formatBytes(data.downloaded);
