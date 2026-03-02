@@ -28,8 +28,6 @@ Users are responsible for complying with local laws and content rights.
 
 ## EC2 Server Mode
 
-Vercel serverless mode has been removed.
-
 ### Entry point
 - `server.js`
 
@@ -70,6 +68,29 @@ Vercel serverless mode has been removed.
 3. Install dependencies: `npm install --omit=dev`
 4. Run server: `PORT=3000 npm run ec2:start`
 5. Put Nginx or Caddy in front of Node for TLS/reverse proxy.
+
+## Vercel Support (Frontend + EC2 API Proxy)
+
+Full torrent/download runtime is not suitable for Vercel serverless functions.
+This project supports Vercel by hosting the UI on Vercel and proxying `/api/*` to your EC2 backend via `api/[...path].js`.
+
+### Setup
+1. Deploy `server.js` on EC2 and confirm API works:
+   - `https://YOUR_EC2_DOMAIN/api/health`
+2. In Vercel project settings, add environment variables:
+   - `API_BASE_URL_PRODUCTION` -> e.g. `https://api.yourdomain.com`
+   - `API_BASE_URL_PREVIEW` -> e.g. `https://staging-api.yourdomain.com`
+   - `API_BASE_URL_DEVELOPMENT` -> e.g. `https://dev-api.yourdomain.com`
+3. Optional fallback variable:
+   - `API_BASE_URL` (used if env-specific var is missing)
+4. Deploy this repo to Vercel.
+5. Open your Vercel URL and test search/download flow.
+
+### Important
+- Do not point API base URLs to localhost/private IP.
+- Keep EC2 publicly reachable behind HTTPS.
+- Download files and cleanup still happen on EC2 (as designed).
+- The proxy auto-selects environment using `VERCEL_ENV` (`production`, `preview`, `development`).
 
 ### Reliability tuning (optional env vars)
 - `SERVER_DOWNLOAD_PATH` (default `./downloads`): locked server-side download directory.
