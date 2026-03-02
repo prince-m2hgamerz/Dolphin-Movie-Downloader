@@ -14,6 +14,7 @@
 
   const knownStates = new Map();
   let pollTimer = null;
+  let nextStatusAttemptAt = 0;
   let cachedConfig = {
     downloadPath: "Managed by server (hidden)",
     pathLocked: true,
@@ -56,7 +57,8 @@
 
     if (!response.ok) {
       const message =
-        (payload && payload.error) || `Request failed (${response.status})`;
+        (payload && (payload.error || payload.detail)) ||
+        `Request failed (${response.status})`;
       throw new Error(message);
     }
 
@@ -227,13 +229,17 @@
   };
 
   const syncStatus = async () => {
+    if (Date.now() < nextStatusAttemptAt) return;
+
     let statuses = [];
 
     try {
       const payload = await request("/api/download-status");
       if (Array.isArray(payload)) statuses = payload;
+      nextStatusAttemptAt = 0;
     } catch (error) {
       emit("updateStatus", "Disconnected from server");
+      nextStatusAttemptAt = Date.now() + 5000;
       return;
     }
 

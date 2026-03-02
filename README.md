@@ -28,6 +28,10 @@ Users are responsible for complying with local laws and content rights.
 
 ## EC2 Server Mode
 
+### Environment file
+1. Copy `.env.example` to `.env`
+2. Update values for your environment
+
 ### Entry point
 - `server.js`
 
@@ -85,6 +89,21 @@ This project supports Vercel by hosting the UI on Vercel and proxying `/api/*` t
    - `API_BASE_URL` (used if env-specific var is missing)
 4. Deploy this repo to Vercel.
 5. Open your Vercel URL and test search/download flow.
+
+### Troubleshooting 500 on Vercel `/api/*`
+If you see `500`/`503` on `/api/get-config` or `/api/download-status`:
+1. Verify Vercel env vars are set for the right environment (`Production`, `Preview`, `Development`).
+2. Ensure the value is only base URL, for example:
+   - `https://api.yourdomain.com`
+   - not `https://api.yourdomain.com/api`
+3. Make sure EC2 endpoint is reachable publicly over HTTPS.
+4. Redeploy after changing env vars.
+
+Accepted variable names:
+- Preferred:
+  - `API_BASE_URL_PRODUCTION`, `API_BASE_URL_PREVIEW`, `API_BASE_URL_DEVELOPMENT`
+- Fallback:
+  - `API_BASE_URL`, `EC2_API_BASE_URL`, `EC2_API_URL`, `UPSTREAM_API_BASE_URL`, `BACKEND_API_BASE_URL`
 
 ### Important
 - Do not point API base URLs to localhost/private IP.
