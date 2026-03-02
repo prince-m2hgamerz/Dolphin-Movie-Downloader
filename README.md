@@ -1,81 +1,78 @@
-# 🎬 Dolphin Movie Downloader
+# Dolphin Movie Downloader
 
-A modern, lightweight desktop application for searching, streaming, and downloading movies directly to your PC.
+A desktop and web-enabled movie downloader project built with Electron and Node.js.
 
-## 📝 Project Overview
+## Overview
 
-**Dolphin Movie Downloader** is a cross-platform desktop application built with **Electron.js** and **Node.js**.  
-It provides a streamlined “Search & Download” experience by aggregating movie results from multiple public torrent providers and enabling direct downloads without requiring any external torrent client.
+This repository supports two runtimes:
+- Desktop app (Electron)
+- EC2/VPS web server (`server.js`) that serves frontend + REST API
 
-Designed with a clean, Netflix-inspired dark interface, the application eliminates the need to browse ad-heavy torrent sites by offering an ad-free, safe, and responsive desktop environment.
+## Tech Stack
 
----
+Frontend:
+- HTML
+- CSS
+- JavaScript
 
-<img width="992" height="806" alt="image" src="https://github.com/user-attachments/assets/91cb97a0-11e9-4f7f-a717-5070fc137c20" />
+Backend:
+- Node.js
+- WebTorrent
+- torrent-search-api
+- Electron (desktop mode)
 
+## Disclaimer
 
+This project is provided for educational purposes.
+Users are responsible for complying with local laws and content rights.
 
-## ✨ Key Features
+## EC2 Server Mode
 
-### 🚀 Integrated Search Engine  
-Scrapes multiple public providers (**1337x**, **YTS**, **PirateBay**) simultaneously to deliver high-quality movie results.
+Vercel serverless mode has been removed.
 
-### 🔽 Smart Download Manager  
-Displays all ongoing downloads with real-time updates on:
-- Download speed  
-- Peer count  
-- Total progress  
+### Entry point
+- `server.js`
 
-### ⏯️ Full Control  
-Built-in controls allow users to:
-- Pause  
-- Resume  
-- Cancel  
-any download instantly.
+### API endpoints
+- `GET /api/health`
+- `GET /api/search-movies?q=...`
+- `POST /api/get-magnet`
+- `GET /api/get-config`
+- `POST /api/select-folder` (locked, returns `403`)
+- `POST /api/start-download`
+- `POST /api/pause-download`
+- `POST /api/resume-download`
+- `POST /api/cancel-download`
+- `GET /api/download-status`
+- `GET /api/downloads`
+- `GET /api/preview-file?id=...`
+- `GET /api/download-file?id=...`
 
+### File lifecycle on EC2
+- Files are temporarily stored on EC2 while downloading.
+- When a user downloads through `GET /api/download-file?id=...` and the transfer completes successfully, the server deletes downloaded artifacts for that job.
+- This keeps EC2 storage clean after delivery.
+- Download path is server-managed and hidden from API/UI clients.
+- Optional: set `COMPLETED_TTL_MS` to auto-delete completed files after a timeout even if no user downloads them.
 
-### 📂 Custom Storage  
-Users can dynamically choose the download directory on their system.
+### Local run
+1. `npm install`
+2. `npm run ec2:start`
+3. Open `http://localhost:3000`
 
-### 🔍 Advanced Filtering  
-Search results can be filtered by:
-- Quality (4K, 1080p, 720p)  
-- File size  
-- Seed count  
-Includes **pagination** with "Load More" support to browse large result sets.
+### Local checks
+1. `npm run web:test`
+2. `npm run web:check`
 
-### 🛡️ Error Handling  
-Automatically detects:
-- Network failures  
-- Provider blocks  
-- ISP restrictions  
-and displays user-friendly error messages.
+### EC2 deployment
+1. Install Node.js 18+ on EC2.
+2. Clone the repository.
+3. Install dependencies: `npm install --omit=dev`
+4. Run server: `PORT=3000 npm run ec2:start`
+5. Put Nginx or Caddy in front of Node for TLS/reverse proxy.
 
----
-
-## 🛠️ Tech Stack
-
-**Frontend:**  
-- HTML5  
-- CSS3  
-- JavaScript (Renderer Process)
-
-**Backend:**  
-- Node.js  
-- Electron (Main Process)
-
-**Core Libraries:**  
-- `webtorrent` (P2P torrent handling)  
-- `torrent-search-api` (Magnet link scraping)  
-- `electron-builder` (Installer generation)
-
----
-
-## ⚠️ Disclaimer
-
-This project is intended **for educational purposes only**, demonstrating how Electron.js and WebTorrent can be used to create desktop applications.
-
-The developer does **not** encourage or support the downloading of copyrighted content.  
-Users are responsible for complying with local laws.  
-If torrenting is restricted in your region, you should use a VPN.
-
+### Reliability tuning (optional env vars)
+- `SERVER_DOWNLOAD_PATH` (default `./downloads`): locked server-side download directory.
+- `STALL_RESTART_MS` (default `180000`): if a download has zero peers/zero speed for this long, server retries the torrent session.
+- `MAX_STALL_RESTARTS` (default `3`): max auto-reconnect attempts per download.
+- `COMPLETED_TTL_MS` (default `0`): auto-delete completed files after timeout.

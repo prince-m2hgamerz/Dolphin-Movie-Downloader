@@ -27,8 +27,33 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + " " + sizes[i];
 }
 
+function formatSpeed(bytesPerSecond) {
+  const speed = Number(bytesPerSecond || 0);
+  if (!Number.isFinite(speed) || speed <= 0) return "0 B/s";
+  if (speed >= 1024 * 1024) return `${(speed / 1024 / 1024).toFixed(2)} MB/s`;
+  if (speed >= 1024) return `${(speed / 1024).toFixed(1)} KB/s`;
+  return `${Math.round(speed)} B/s`;
+}
+
+function formatProgressPercent(value) {
+  const progress = Number(value || 0);
+  if (!Number.isFinite(progress) || progress <= 0) return "0%";
+  if (progress < 0.01) return "<0.01%";
+  if (progress < 1) return `${progress.toFixed(2)}%`;
+  return `${progress.toFixed(1)}%`;
+}
+
+function setSidebarOpen(isOpen) {
+  const sidebar = document.getElementById("downloadSidebar");
+  if (!sidebar) return;
+  sidebar.classList.toggle("open", Boolean(isOpen));
+  document.body.classList.toggle("sidebar-open", Boolean(isOpen));
+}
+
 function toggleSidebar() {
-  document.getElementById("downloadSidebar").classList.toggle("open");
+  const sidebar = document.getElementById("downloadSidebar");
+  if (!sidebar) return;
+  setSidebarOpen(!sidebar.classList.contains("open"));
 }
 
 async function changeFolder() {
@@ -85,7 +110,7 @@ async function search() {
       // If no results, show Empty State again (or a specific 'No Results' view)
       emptyState.style.display = "block";
       emptyState.innerHTML =
-        '<i class="fas fa-search-minus" style="font-size: 48px; margin-bottom: 10px;"></i><p>No results found</p>';
+        '<i class="fas fa-search-minus empty-state-icon"></i><p>No results found</p>';
     } else {
       applyFilters();
     }
@@ -115,7 +140,7 @@ function cancelSearch() {
   emptyState.style.display = "block";
   // Reset text back to original
   emptyState.innerHTML =
-    '<i class="fas fa-film" style="font-size: 48px; margin-bottom: 10px;"></i><p>Ready to search</p>';
+    '<i class="fas fa-film empty-state-icon"></i><p>Ready to search</p>';
 }
 
 function applyFilters() {
@@ -194,11 +219,11 @@ function renderPage() {
         : t.size;
 
     const row = `
-            <tr>
-                <td>${t.title}</td>
-                <td>${displaySize}</td>
-                <td style="color: #4caf50;">${t.seeds}</td>
-                <td>
+            <tr class="result-row">
+                <td class="result-cell result-title" data-label="Title">${t.title}</td>
+                <td class="result-cell" data-label="Size">${displaySize}</td>
+                <td class="result-cell seeds-cell" data-label="Seeds">${t.seeds}</td>
+                <td class="result-cell result-action" data-label="Action">
                     <button class="download-btn" onclick="startDownload('${t.id}')">
                         <i class="fas fa-download"></i> Download
                     </button>
@@ -224,7 +249,7 @@ function startDownload(id) {
   if (!torrent) return;
 
   addToSidebar(torrent);
-  document.getElementById("downloadSidebar").classList.add("open");
+  setSidebarOpen(true);
   window.api.startDownload(torrent);
 }
 
@@ -241,7 +266,7 @@ function addToSidebar(torrent) {
             
             <div class="progress-info">
                 <span id="speed-${torrent.id}">0 MB/s</span>
-                <span id="size-${torrent.id}" style="color:#888; font-size:11px;">Waiting...</span>
+                <span id="size-${torrent.id}" class="progress-size">Waiting...</span>
                 <span id="percent-${torrent.id}">0%</span>
             </div>
             
@@ -250,7 +275,7 @@ function addToSidebar(torrent) {
             </div>
 
             <div class="card-actions">
-                <button class="action-icon-btn" onclick="preview('${torrent.id}')" title="Preview Video" style="background: #0ea5e9; color: white; margin-right: 5px;">
+                <button class="action-icon-btn btn-preview" onclick="preview('${torrent.id}')" title="Preview Video">
                     <i class="fas fa-play-circle"></i>
                 </button>
 
@@ -274,7 +299,7 @@ function addToSidebar(torrent) {
 function pause(id) {
   const torrent = activeDownloads.get(id);
   if (!torrent || !torrent.magnet) {
-    alert("⚠️ Still connecting... please wait 2 seconds.");
+    alert("Still connecting. Please wait 2 seconds.");
     return;
   }
 
@@ -343,20 +368,26 @@ window.api.onProgress((data) => {
     const speedText = document.getElementById(`speed-${data.id}`);
     const sizeText = document.getElementById(`size-${data.id}`);
 
-    if (bar) bar.style.width = `${data.progress}%`;
-    if (percentText) percentText.innerText = `${data.progress}%`;
-    if (speedText) speedText.innerText = `${data.speed} MB/s`;
+    const progressValue = Number(data.progress || 0);
+    const speedBytes = Number(
+      data.speedBytes || Number(data.speed || 0) * 1024 * 1024
+    );
+
+    if (bar) bar.style.width = `${Math.max(0, Math.min(100, progressValue))}%`;
+    if (percentText) percentText.innerText = formatProgressPercent(progressValue);
+    if (speedText) speedText.innerText = formatSpeed(speedBytes);
 
     if (sizeText && data.total) {
       const downStr = formatBytes(data.downloaded);
       const totalStr = formatBytes(data.total);
-      sizeText.innerText = `${downStr} / ${totalStr}`;
+      const peers = Number(data.peers || 0);
+      sizeText.innerText = `${downStr} / ${totalStr} | ${peers} peers`;
     }
   }
 });
 
 window.api.onComplete((data) => {
-    // 1. Update the internal tracker with the final file path
+    // Update the internal tracker with the final file path
     const torrent = activeDownloads.get(data.id);
     if (torrent) {
         torrent.filePath = data.path;
@@ -365,34 +396,36 @@ window.api.onComplete((data) => {
     const card = document.getElementById(`card-${data.id}`);
     if (!card) return;
 
-    // 2. Turn the Progress Bar GREEN
+    // Mark progress as complete
     const bar = document.getElementById(`bar-${data.id}`);
     const percentText = document.getElementById(`percent-${data.id}`);
     const speedText = document.getElementById(`speed-${data.id}`);
 
     if (bar) {
-        bar.style.width = '100%';
-        bar.style.backgroundColor = '#4caf50'; // Green
+        bar.style.width = "100%";
+        bar.style.backgroundColor = "#22c55e";
     }
     if (percentText) percentText.innerText = "100%";
     
-    // 3. Show "Completed" text
+    // Show completed text
     if (speedText) {
-        speedText.innerHTML = '<span style="color:#4caf50; font-weight:bold;">✅ Download Completed</span>';
+        speedText.classList.remove("status-error");
+        speedText.classList.add("status-complete");
+        speedText.innerText = "Download Completed";
     }
 
-    // 4. Swap Buttons: Remove Pause/Cancel -> Add "Locate File" & "Preview"
+    // Swap action buttons after completion
     const actionDiv = card.querySelector('.card-actions');
     actionDiv.innerHTML = `
-        <button class="action-icon-btn" onclick="preview('${data.id}')" title="Play Video" style="background: #0ea5e9; color: white; margin-right: 5px;">
+        <button class="action-icon-btn btn-preview" onclick="preview('${data.id}')" title="Play Video">
             <i class="fas fa-play-circle"></i>
         </button>
-        <button class="action-icon-btn" onclick="locateFile('${data.id}')" title="Open Folder" style="background:#4caf50; border-radius:4px; padding: 0 10px; width: auto;">
+        <button class="action-icon-btn action-pill btn-open" onclick="locateFile('${data.id}')" title="Open Folder">
             <i class="fas fa-folder-open"></i> Open
         </button>
     `;
 
-    new Notification('Download Finished', { body: data.title });
+    new Notification("Download Finished", { body: data.title });
 });
 
 function locateFile(id) {
@@ -401,6 +434,30 @@ function locateFile(id) {
     window.api.showItemInFolder(torrent.filePath);
   } else {
     alert("File path not found. It might have been moved.");
+  }
+}
+
+function openMagnetFallback(id) {
+  const torrent = activeDownloads.get(id);
+  if (!torrent || !torrent.magnet || typeof window.api.openMagnet !== "function") {
+    alert("Magnet link is unavailable.");
+    return;
+  }
+  window.api.openMagnet(torrent.magnet);
+}
+
+async function copyMagnetFallback(id) {
+  const torrent = activeDownloads.get(id);
+  if (!torrent || !torrent.magnet || typeof window.api.copyText !== "function") {
+    alert("Magnet link is unavailable.");
+    return;
+  }
+
+  const copied = await window.api.copyText(torrent.magnet);
+  if (copied) {
+    alert("Magnet copied.");
+  } else {
+    alert("Could not copy magnet automatically.");
   }
 }
 
@@ -422,9 +479,44 @@ function updateCardButtons(id, magnet) {
 window.api.onError((data) => {
   const card = document.getElementById(`card-${data.id}`);
   if (card) {
+    const torrent = activeDownloads.get(data.id);
+    if (torrent && data.magnet && !torrent.magnet) {
+      torrent.magnet = data.magnet;
+    }
+
     const progressText = document.getElementById(`speed-${data.id}`);
     if (progressText) {
-      progressText.innerHTML = `<span style="color:#ff4444">⚠️ ${data.message}</span>`;
+      progressText.classList.remove("status-complete");
+      progressText.classList.add("status-error");
+      progressText.innerText = `Warning: ${data.message}`;
+    }
+
+    const canUseMagnetFallback =
+      torrent &&
+      torrent.magnet &&
+      (typeof window.api.openMagnet === "function" ||
+        typeof window.api.copyText === "function");
+
+    if (
+      canUseMagnetFallback &&
+      typeof data.message === "string" &&
+      (
+        data.message.toLowerCase().includes("no web peers") ||
+        data.message.toLowerCase().includes("invalid torrent identifier") ||
+        data.message.toLowerCase().includes("invalid magnet")
+      )
+    ) {
+      const actionDiv = card.querySelector(".card-actions");
+      if (actionDiv) {
+        actionDiv.innerHTML = `
+          <button class="action-icon-btn action-pill btn-open-magnet" onclick="openMagnetFallback('${data.id}')" title="Open in torrent app">
+            <i class="fas fa-external-link-alt"></i> Open Magnet
+          </button>
+          <button class="action-icon-btn action-pill btn-copy-magnet" onclick="copyMagnetFallback('${data.id}')" title="Copy magnet">
+            <i class="fas fa-copy"></i> Copy
+          </button>
+        `;
+      }
     }
   }
 });
@@ -436,12 +528,22 @@ document.addEventListener("click", (event) => {
   const isDownloadBtn = event.target.closest(".download-btn");
 
   if (
+    sidebar &&
+    toggleBtn &&
     sidebar.classList.contains("open") &&
     !sidebar.contains(event.target) &&
     !toggleBtn.contains(event.target) &&
     !isDownloadBtn
   ) {
-    sidebar.classList.remove("open");
+    setSidebarOpen(false);
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  const sidebar = document.getElementById("downloadSidebar");
+  if (sidebar && sidebar.classList.contains("open")) {
+    setSidebarOpen(false);
   }
 });
 
@@ -463,7 +565,7 @@ if (window.api.onRestore) {
 
     // Open Sidebar
     if (savedList.length > 0) {
-      document.getElementById("downloadSidebar").classList.add("open");
+      setSidebarOpen(true);
       updateBadge();
     }
   });

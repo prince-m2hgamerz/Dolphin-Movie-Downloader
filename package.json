@@ -7,7 +7,11 @@
   "author": "Ghdb Ashen",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "server:start": "node server.js",
+    "ec2:start": "node server.js",
+    "web:test": "node scripts/test-api.js",
+    "web:check": "node --check server.js && node --check src/web-api.js && node --check src/renderer.js"
   },
   "build": {
     "appId": "com.moviedownloader.app",

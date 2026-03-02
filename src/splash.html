@@ -1,141 +1,140 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Loading...</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ViBEX SERVER</title>
     <style>
-        body {
-            margin: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            /* RED & BLACK THEME */
-            background: linear-gradient(135deg, #000000 0%, #5c0000 100%); 
-            color: white;
-            font-family: 'Segoe UI', sans-serif;
-            overflow: hidden;
-            border-radius: 10px;
-            user-select: none;
-            cursor: default;
-            border: 1px solid #330000;
-            -webkit-app-region: drag; /* Drag whole window */
-        }
+      @import url("https://cdn.jsdelivr.net/npm/geist-font@1.3.1/style.css");
 
-        /* --- DOLPHIN --- */
-        .dolphin-container {
-            position: relative;
-            width: 100px;
-            height: 100px;
-            margin-bottom: 15px;
-            animation: swim 2s infinite ease-in-out;
-            /* Makes emoji/image white to fit theme */
-            filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5)); 
-        }
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: radial-gradient(600px 260px at 50% -15%, #1a1a1a 0%, transparent 70%),
+          #000;
+        color: #f5f5f5;
+        font-family: "Geist Sans", "Geist", "Segoe UI", sans-serif;
+        overflow: hidden;
+        border-radius: 10px;
+        user-select: none;
+        cursor: default;
+        border: 1px solid #2b2b30;
+        -webkit-app-region: drag;
+      }
 
-        .dolphin-icon {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-        }
+      body::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: radial-gradient(circle at center, black 20%, transparent 84%);
+        opacity: 0.35;
+        pointer-events: none;
+      }
 
-        @keyframes swim {
-            0%, 100% { transform: translateY(0) rotate(0deg); }
-            50% { transform: translateY(-15px) rotate(-5deg); }
-        }
+      .logo {
+        width: 86px;
+        height: 86px;
+        border-radius: 22px;
+        border: 1px solid #fff;
+        background: #fff;
+        color: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+        animation: float 2.2s ease-in-out infinite;
+        z-index: 1;
+      }
 
-        /* --- RED RIPPLE --- */
-        .ripple {
-            width: 60px;
-            height: 10px;
-            background: radial-gradient(circle, rgba(255,0,0,0.6) 0%, rgba(0,0,0,0) 70%);
-            border-radius: 50%;
-            margin-top: -5px;
-            margin-bottom: 20px;
-            animation: ripple-anim 2s infinite ease-in-out;
-        }
+      .logo i {
+        font-size: 34px;
+      }
 
-        @keyframes ripple-anim {
-            0%, 100% { transform: scale(0.8); opacity: 0.6; }
-            50% { transform: scale(1.4); opacity: 0.2; }
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0);
         }
-
-        /* --- TEXT --- */
-        h2 {
-            margin: 0;
-            font-size: 26px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            text-transform: uppercase;
+        50% {
+          transform: translateY(-8px);
         }
+      }
 
-        p#status {
-            margin-top: 5px;
-            font-size: 13px;
-            color: #ff8080; /* Light Red */
-            letter-spacing: 0.5px;
-        }
+      h2 {
+        margin: 16px 0 6px;
+        font-size: 27px;
+        letter-spacing: 0.08em;
+        z-index: 1;
+      }
 
-        /* --- FOOTER (Version & Credit) --- */
-        .footer {
-            position: absolute;
-            bottom: 15px;
-            width: 100%;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
+      #status {
+        margin: 0;
+        color: #a1a1aa;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        z-index: 1;
+      }
 
-        .version {
-            font-size: 11px;
-            color: #666;
-            font-family: monospace;
-        }
+      .footer {
+        position: absolute;
+        bottom: 14px;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+      }
 
-        .credit {
-            font-size: 10px;
-            color: #cc0000; /* Darker red for subtle look */
-            font-weight: bold;
-            opacity: 0.8;
-            letter-spacing: 1px;
-        }
+      .version {
+        color: #8f8f98;
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
 
+      .credit {
+        color: #b8b8bf;
+        opacity: 0.9;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+      }
     </style>
-</head>
-<body>
-
-    <div class="dolphin-container">
-        <div style="font-size: 80px; text-align: center; filter: grayscale(100%) brightness(200%);">🐬</div>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div class="logo">
+      <i class="fas fa-server"></i>
     </div>
 
-    <div class="ripple"></div>
-
-    <h2>Dolphin Downloader</h2>
+    <h2>ViBEX SERVER</h2>
     <p id="status">Initializing...</p>
 
     <div class="footer">
-        <span class="version" id="version">v1.1.3</span>
-        <span class="credit">Created by GHDB Ashen</span>
+      <span class="version" id="version">v1.1.3</span>
+      <span class="credit">Powered by ViBEX</span>
     </div>
 
     <script>
-        const { ipcRenderer } = require('electron');
-        const statusElement = document.getElementById('status');
-        const versionElement = document.getElementById('version');
+      const { ipcRenderer } = require("electron");
+      const statusElement = document.getElementById("status");
+      const versionElement = document.getElementById("version");
 
-        // Listen for status updates
-        ipcRenderer.on('update-status', (event, message) => {
-            statusElement.innerText = message;
-        });
+      ipcRenderer.on("update-status", (event, message) => {
+        statusElement.innerText = message;
+      });
 
-        // Listen for version number
-        ipcRenderer.on('app-version', (event, version) => {
-            versionElement.innerText = `v${version}`;
-        });
+      ipcRenderer.on("app-version", (event, version) => {
+        versionElement.innerText = `v${version}`;
+      });
     </script>
-
-</body>
+  </body>
 </html>
