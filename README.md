@@ -32,6 +32,7 @@ Users are responsible for complying with local laws and content rights.
 1. Copy `.env.example` to `.env`
 2. Update values for your environment
 3. `server.js` and test/proxy scripts automatically read `.env`
+4. `PUBLIC_BASE_URL` should match the real externally reachable URL (include `:PORT` if not using 80/443)
 
 ### Entry point
 - `server.js`

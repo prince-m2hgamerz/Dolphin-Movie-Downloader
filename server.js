@@ -1123,9 +1123,15 @@ if (require.main === module) {
       const server = createServer();
       server.listen(PORT, HOST, () => {
         const visibleBase = PUBLIC_BASE_URL.replace(/\/+$/, "");
-        const runtimeBase =
-          visibleBase || `http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`;
-        console.log(`Dolphin API server running on ${runtimeBase}`);
+        const bindHostForLog = HOST === "0.0.0.0" ? "0.0.0.0" : HOST;
+        const localAccessBase = `http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`;
+
+        console.log(`Dolphin API server listening on ${bindHostForLog}:${PORT}`);
+        console.log(`Local access URL: ${localAccessBase}`);
+
+        if (visibleBase) {
+          console.log(`Public URL: ${visibleBase}`);
+        }
       });
 
       const cleanupTimer = setInterval(() => {
